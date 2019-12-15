@@ -1,0 +1,26 @@
+{
+  "name": "homebridge-sgp30",
+  "version": "0.0.1",
+  "description": "A Homebridge plugin for the SGP30 eCO2 and TVOC sensor.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aaronhktan/homebridge-sgp30.git"
+  },
+  "keywords": [
+    "homebridge-plugin"
+  ],
+  "engines": {
+    "homebridge": ">=0.2.0",
+    "node": ">=0.12.0"
+  },
+  "author": "Aaron Tan",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/aaronhktan/homebridge-sgp30/issues"
+  },
+  "homepage": "https://github.com/aaronhktan/homebridge-sgp30#readme"
+}
