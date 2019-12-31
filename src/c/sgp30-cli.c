@@ -20,7 +20,12 @@ int main(int argc, char **argv) {
   uint64_t serial;
   SGP30_get_serial_id(&serial);
   printf("Serial: 0x%012llx\n", serial);
-  
+
+  // Get feature set version
+  uint16_t version;
+  SGP30_get_feature_set_version(&version);
+  printf("Feature set version: 0x%04x\n", version);
+
   // Set and get baseline
   // uint16_t eCO2_baseline = 37769;
   // uint16_t TVOC_baseline = 36320;

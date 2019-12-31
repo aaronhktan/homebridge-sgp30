@@ -238,4 +238,4 @@ int SGP30_get_serial_id(uint64_t *serial_id) {
                | ((uint64_t)response[6] << 8) | (uint64_t)response[7];
   return NO_ERROR;
 }
- 
+
