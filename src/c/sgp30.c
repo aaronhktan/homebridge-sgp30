@@ -7,8 +7,10 @@
 #include <string.h>
 #include <unistd.h>
 
+// 626 = 400kHz (fast mode I2C)
 uint16_t clk_div = BCM2835_I2C_CLOCK_DIVIDER_626;
 
+// Generates CRC from input, of length input_len bytes
 static uint8_t crc_generate(char *input, int input_len) {
   uint8_t crc = 0xFF;
   for (uint8_t i = 0; i < input_len; i++) {
@@ -25,6 +27,7 @@ static uint8_t crc_generate(char *input, int input_len) {
   return crc;
 }
 
+// Compares calculated CRC with expected CRC
 static int crc_compare(char *input, int input_len, uint8_t expected) {
   uint8_t crc = crc_generate(input, input_len);
   debug_print(stdout, "CRC: %02x, Expected: %02x\n", crc, expected);
@@ -76,6 +79,7 @@ static int i2c_write_read(char *write_bytes, int write_len,
   return i2c_write_delay_read(write_bytes, write_len, read_bytes, read_len, 10);
 }
 
+// Set up and tear down SGP30
 int SGP30_init(void) {
   bcm2835_init();
   bcm2835_i2c_begin();
@@ -113,6 +117,8 @@ int SGP30_measure_air_quality(uint16_t *eCO2_out,
   return err;
 }
 
+// Raw signals can be used to calculate concentration given a reference concentration
+// See datasheet for more details.
 int SGP30_measure_raw_signals(uint16_t *h2_out,
                               uint16_t *ethanol_out) {
   char raw_cmd[2] = { 0x20, 0x50 };
@@ -132,6 +138,8 @@ int SGP30_measure_raw_signals(uint16_t *h2_out,
   return NO_ERROR;
 }
 
+// Baseline should be read, stored in some other non-volatile memory,
+// then restored upon first power-up of the SGP30.
 int SGP30_get_baseline(uint16_t *eCO2_out,
                               uint16_t *TVOC_out) {
   char baseline_cmd[2] = { 0x20, 0x15 };
@@ -153,6 +161,8 @@ int SGP30_get_baseline(uint16_t *eCO2_out,
 }
 
 // Functions to set data in SGP30
+// Baseline should be resored upon first power up if baseline was previously retrieved
+// using SGP30_get_baseline().
 int SGP30_set_baseline(const uint16_t eCO2_in,  
                        const uint16_t TVOC_in) {
   char eCO2[2] = { eCO2_in >> 8, eCO2_in & 0xFF }; 
@@ -178,6 +188,9 @@ int SGP30_set_baseline(const uint16_t eCO2_in,
   return 0;
 }
 
+// This enables humidity compensation in the SGP30.
+// humidity_in is of units g/m3, with 8 MSB representing integer part of humidity
+// and 8 LSB representing the decimal part of humidity.
 int SGP30_set_humidity(uint16_t humidity_in) {
   char humidity[2] = { humidity_in >> 8, humidity_in & 0xFF };
   uint8_t humidity_CRC = crc_generate(humidity, 2);
@@ -209,6 +222,8 @@ int SGP30_measure_test(void) {
   return !(response[0] == 0xD4 && response[1] == 0x00);
 }
 
+// This library has been tested with the 0x22 featureset
+// Although 0x20 and 0x22 should both be compatible.
 int SGP30_get_feature_set_version(uint16_t *version_out) {
   char feature_cmd[2] = { 0x20, 0x2F };
   int cmd_size = 2;
@@ -223,6 +238,7 @@ int SGP30_get_feature_set_version(uint16_t *version_out) {
   return NO_ERROR; 
 }
 
+// The Serial ID is a 48-bit value unique to the chip.
 int SGP30_get_serial_id(uint64_t *serial_id) {
   char serial_cmd[2] = { 0x36, 0x82 };
   int cmd_size = 2;
