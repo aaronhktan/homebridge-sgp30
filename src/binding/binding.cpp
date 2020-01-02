@@ -6,10 +6,17 @@ extern "C" {
 
 #include <napi.h>
 
+#include <string>
+
 Napi::Object init(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
 
-  int err = SGP30_init();
+  std::string i2cAdaptor{"/dev/i2c-1"}; 
+  if (info.Length() == 1) {
+    i2cAdaptor = static_cast<std::string>(info[0].As<Napi::String>());
+  }
+
+  int err = SGP30_init(i2cAdaptor.c_str());
   if (err) {
     return BindingUtils::errFactory(env, err,
       "Could not initialize SGP30 module; are you running as root?");

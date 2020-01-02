@@ -6,8 +6,8 @@ LDLIBS =
 
 DEBUGFLAG = 0
 
-SRCS = sgp30-cli.c gp30.c bcm2835.c
-OBJS = sgp30-cli.o sgp30.o bcm2835.o
+SRCS = sgp30-cli.c gp30.c
+OBJS = sgp30-cli.o sgp30.o
 TARGETS = sgp30-cli debug
 
 debug: CFLAGS += -DDEBUG -g

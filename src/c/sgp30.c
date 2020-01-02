@@ -1,14 +1,16 @@
 #include "sgp30.h"
 
-#include "bcm2835.h"
+#include <fcntl.h>                     // open()
+#include <sys/ioctl.h>                 // ioctl()
+#include <linux/i2c-dev.h>             // Linux I2C interface
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include <stdio.h>                     // printf()
+#include <stdlib.h>                    // lots of macros
+#include <string.h>                    // memset()
+#include <unistd.h>                    // read()
 
-// 626 = 400kHz (fast mode I2C)
-uint16_t clk_div = BCM2835_I2C_CLOCK_DIVIDER_626;
+// Keep track of file descriptor for I2C interface
+static int i2c_fd;
 
 // Generates CRC from input, of length input_len bytes
 static uint8_t crc_generate(char *input, int input_len) {
@@ -45,13 +47,16 @@ static int i2c_write_delay_read(char *write_bytes, int write_len,
     return ERROR_INVAL;
   }
 
-  if (bcm2835_i2c_write(write_bytes, write_len)) {
+  int err = 0;
+  err = write(i2c_fd, write_bytes, write_len);
+  if (err != write_len) {
     return ERROR_I2C;
   }
 
   usleep(delay_ms * 1000);
 
-  if (bcm2835_i2c_read(read_bytes, read_len)) {
+  err = read(i2c_fd, read_bytes, read_len);
+  if (err != read_len) {
     return ERROR_I2C;
   }
 
@@ -80,20 +85,29 @@ static int i2c_write_read(char *write_bytes, int write_len,
 }
 
 // Set up and tear down SGP30
-int SGP30_init(void) {
-  bcm2835_init();
-  bcm2835_i2c_begin();
-  bcm2835_i2c_setSlaveAddress(SGP30_ADDRESS);
-  bcm2835_i2c_setClockDivider(clk_div);
-  
+int SGP30_init(const char *i2c_adaptor) {
+  i2c_fd = open(i2c_adaptor, O_RDWR);
+  if (i2c_fd < 0) {
+    return ERROR_I2C;
+  } 
+
+  int err = ioctl(i2c_fd, I2C_SLAVE, SGP30_ADDRESS);
+  if (err < 0) {
+    return ERROR_I2C;
+  }
+
   char init_cmd[2] = { 0x20, 0x03 };
-  bcm2835_i2c_write(init_cmd, 2);
+  int cmd_size = 2;
+  int retval = write(i2c_fd, init_cmd, cmd_size);
+  if (retval != cmd_size) {
+    return ERROR_I2C;
+  }
+
   return 0;
 }
 
 int SGP30_deinit(void) {
-  bcm2835_i2c_end();
-  bcm2835_close();
+  close(i2c_fd);
   return 0;
 }
 
@@ -182,7 +196,7 @@ int SGP30_set_baseline(const uint16_t eCO2_in,
   baseline_cmd[7] = eCO2_CRC; 
   int baseline_size = 8;
 
-  if (bcm2835_i2c_write(baseline_cmd, baseline_size)) {
+  if (write(i2c_fd, baseline_cmd, baseline_size)) {
     return ERROR_I2C;
   }
   return 0;
@@ -200,7 +214,7 @@ int SGP30_set_humidity(uint16_t humidity_in) {
   humidity_cmd[4] = humidity_CRC;
   int humidity_size = 5;
 
-  if (bcm2835_i2c_write(humidity_cmd, humidity_size)) {
+  if (write(i2c_fd, humidity_cmd, humidity_size)) {
     return ERROR_I2C;
   }
   return 0;

@@ -25,7 +25,7 @@ enum Error {
 #define SGP30_ADDRESS 0x58
 
 // Set up and tear down SGP30 I2C interface
-int SGP30_init(void);
+int SGP30_init(const char *i2c_adaptor);
 int SGP30_deinit(void);
 
 // Fetch data from SGP30

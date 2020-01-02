@@ -14,7 +14,9 @@ int main(int argc, char **argv) {
   signal(SIGINT, int_handle);
   
   // Init SGP30
-  SGP30_init();
+  SGP30_init("/dev/i2c-1");
+
+  usleep(10000);
   
   // Get serial number
   uint64_t serial;
