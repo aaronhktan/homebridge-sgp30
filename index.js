@@ -1,6 +1,6 @@
 const SGP30 = require('bindings')('homebridge-sgp30');
-const inherits = require('util').inherits;
 
+const inherits = require('util').inherits;
 const moment = require('moment'); // Time formatting
 const mqtt = require('mqtt'); // MQTT client
 const os = require('os'); // Hostname
@@ -17,7 +17,6 @@ module.exports = homebridge => {
   // Need to add two custom characteristic for CO2 PPM to show historical graphs in Eve app
   // See https://github.com/skrollme/homebridge-eveatmo/issues/1
   // and https://github.com/simont77/fakegato-history/issues/65
-  // Custom characteristic for Air Quality PPM to show up in Eve app
   CustomCharacteristic.EveAirQuality = function() {
     Characteristic.call(this, 'Eve Air Quality', 'E863F10B-079E-48FF-8F27-9C2605A29F52');
     this.setProps({
@@ -33,9 +32,8 @@ module.exports = homebridge => {
   CustomCharacteristic.EveAirQuality.UUID = 'E863F10B-079E-48FF-8F27-9C2605A29F52';
   inherits(CustomCharacteristic.EveAirQuality, Characteristic);
 
-  // Custom characteristic for Air Quality to show up in Eve app
   CustomCharacteristic.EveAirQualityUnknown = function() {
-    Characteristic.call(this, 'Eve Air Quality', 'E863F132-079E-48FF-8F27-9C2605A29F52');
+    Characteristic.call(this, 'Unknown Eve Characteristic', 'E863F132-079E-48FF-8F27-9C2605A29F52');
     this.setProps({
       format: Characteristic.Formats.FLOAT,
       maxValue: 5000,
@@ -51,9 +49,8 @@ module.exports = homebridge => {
   homebridge.registerAccessory("homebridge-sgp30", "SGP30", SGP30Accessory);
 }
 
-// SGP30 constructor
 function SGP30Accessory(log, config) {
-  // Basic setup from config file
+  // Load configuration from files
   this.log = log;
   this.displayName = config['name'];
   this.baseline_values = config['baseline'];
@@ -72,6 +69,7 @@ function SGP30Accessory(log, config) {
   this._eCO2Counter = 0;
   this._TVOCCounter = 0;
 
+  // Services
   let informationService = new Service.AccessoryInformation();
   informationService
     .setCharacteristic(Characteristic.Manufacturer, "Sensirion")
@@ -85,7 +83,6 @@ function SGP30Accessory(log, config) {
   airQualityService.addCharacteristic(CustomCharacteristic.EveAirQuality);
   airQualityService.addCharacteristic(CustomCharacteristic.EveAirQualityUnknown);
 
-  // Make these services available to class
   this.informationService = informationService;
   this.airQualityService = airQualityService;
 
@@ -108,6 +105,7 @@ function SGP30Accessory(log, config) {
   setInterval(() => this.refreshData(), 1000);
 }
 
+// Error checking and averaging when saving eCO2 and TVOC
 Object.defineProperty(SGP30Accessory.prototype, "eCO2", {
   set: function(eCO2Reading) {
     if (eCO2Reading > 60000 || eCO2Reading < 0) {
@@ -187,6 +185,7 @@ Object.defineProperty(SGP30Accessory.prototype, "TVOC", {
     this._TVOCSamples.push(TVOCReading);
     this._TVOCCumSum += TVOCReading;
 
+    // Publish TVOC to MQTT every 30 seconds
     if (this._TVOCCounter == 30) {
       this._TVOCCounter = 0;
       this._currentTVOC = this._TVOCCumSum / 30;
@@ -206,7 +205,7 @@ Object.defineProperty(SGP30Accessory.prototype, "TVOC", {
   }
 });
 
-// Sets up MQTT client so that we can send data
+// Sets up MQTT client based on config loaded in constructor
 SGP30Accessory.prototype.setUpMQTT = function() {
   if (!this.enableMQTT) {
     this.log.info("MQTT not enabled");
@@ -232,7 +231,7 @@ SGP30Accessory.prototype.setUpMQTT = function() {
   });
 }
 
-// Sends data to MQTT broker
+// Sends data to MQTT broker; must have called setupMQTT() previously
 SGP30Accessory.prototype.publishToMQTT = function(topic, value) {
   if (!this.mqttClient.connected || !topic) {
     this.log.error("MQTT client not connected, or no topic or value for MQTT");
@@ -241,7 +240,7 @@ SGP30Accessory.prototype.publishToMQTT = function(topic, value) {
   this.mqttClient.publish(topic, String(value));
 }
 
-// Set up sensor
+// Set up sensor; checks that I2C interface is available and device is ready
 SGP30Accessory.prototype.setupSGP30 = function() {
   data = SGP30.init();
   if (data.hasOwnProperty('errcode')) {
@@ -249,7 +248,7 @@ SGP30Accessory.prototype.setupSGP30 = function() {
   }
 }
 
-// Get data from the sensor
+// Read eCO2 and TVOC from sensor
 SGP30Accessory.prototype.refreshData = function() {
   let data;
   data = SGP30.measureAirQuality();
@@ -264,7 +263,6 @@ SGP30Accessory.prototype.refreshData = function() {
     return;
   }
   
-  // Set eCO2 and TVOC from what we polled
   this.log.debug(`Read: eCO2: ${data.eCO2}ppm, TVOC: ${data.TVOC}ppb`); 
   this.eCO2 = data.eCO2;
   this.TVOC = data.TVOC;
@@ -275,3 +273,4 @@ SGP30Accessory.prototype.getServices = function() {
           this.airQualityService,
           this.fakeGatoHistoryCarbonDioxideService];
 }
+
