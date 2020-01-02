@@ -1,17 +1,52 @@
 const SGP30 = require('bindings')('homebridge-sgp30');
+const inherits = require('util').inherits;
 
 const moment = require('moment'); // Time formatting
 const mqtt = require('mqtt'); // MQTT client
 const os = require('os'); // Hostname
 
 var Service, Characteristic;
-
+var CustomCharacteristic = {};
 var FakeGatoHistoryService;
 
 module.exports = homebridge => {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   FakeGatoHistoryService = require('fakegato-history')(homebridge);
+
+  // Need to add two custom characteristic for CO2 PPM to show historical graphs in Eve app
+  // See https://github.com/skrollme/homebridge-eveatmo/issues/1
+  // and https://github.com/simont77/fakegato-history/issues/65
+  // Custom characteristic for Air Quality PPM to show up in Eve app
+  CustomCharacteristic.EveAirQuality = function() {
+    Characteristic.call(this, 'Eve Air Quality', 'E863F10B-079E-48FF-8F27-9C2605A29F52');
+    this.setProps({
+      format: Characteristic.Formats.UINT16,
+      unit: "ppm",
+      maxValue: 5000,
+      minValue: 0,
+      minStep: 1,
+      perms: [ Characteristic.Perms.READ, Characteristic.Perms.NOTIFY ],
+    });
+    this.value = this.getDefaultValue();
+  }
+  CustomCharacteristic.EveAirQuality.UUID = 'E863F10B-079E-48FF-8F27-9C2605A29F52';
+  inherits(CustomCharacteristic.EveAirQuality, Characteristic);
+
+  // Custom characteristic for Air Quality to show up in Eve app
+  CustomCharacteristic.EveAirQualityUnknown = function() {
+    Characteristic.call(this, 'Eve Air Quality', 'E863F132-079E-48FF-8F27-9C2605A29F52');
+    this.setProps({
+      format: Characteristic.Formats.FLOAT,
+      maxValue: 5000,
+      minValue: 0,
+      minStep: 1,
+      perms: [ Characteristic.Perms.READ, Characteristic.Perms.NOTIFY ],
+    });
+    this.value = this.getDefaultValue();
+  }
+  CustomCharacteristic.EveAirQualityUnknown.UUID = 'E863F132-079E-48FF-8F27-9C2605A29F52';
+  inherits(CustomCharacteristic.EveAirQualityUnknown, Characteristic);
 
   homebridge.registerAccessory("homebridge-sgp30", "SGP30", SGP30Accessory);
 }
@@ -27,21 +62,28 @@ function SGP30Accessory(log, config) {
   this.enableMQTT = config['enableMQTT'] || false;
   this.mqttConfig = config['mqtt'];
 
-  // Internal variables to keep track of current temperature and humidity
+  // Internal variables to keep track of current eCO2 and TVOC
   this._currenteCO2 = null;
   this._currentTVOC = null;
+  this._eCO2Samples = [];
+  this._TVOCSamples = [];
+  this._eCO2CumSum = 0;
+  this._TVOCCumSum = 0;
+  this._eCO2Counter = 0;
+  this._TVOCCounter = 0;
 
   let informationService = new Service.AccessoryInformation();
   informationService
     .setCharacteristic(Characteristic.Manufacturer, "Sensirion")
     .setCharacteristic(Characteristic.Model, "SGP30")
-    .setCharacteristic(Characteristic.SerialNumber, `${os.hostname}-0`);
+    .setCharacteristic(Characteristic.SerialNumber, `${os.hostname}-0`)
     .setCharacteristic(Characteristic.FirmwareRevision, require('./package.json').version);
 
   let airQualityService = new Service.AirQualitySensor();
-  airQualityService
-    .addCharacteristic(Characteristic.CarbonDioxideLevel)
-    .addCharacteristic(Characteristic.VOCDensity);
+  airQualityService.addCharacteristic(Characteristic.CarbonDioxideLevel)
+  airQualityService.addCharacteristic(Characteristic.VOCDensity);
+  airQualityService.addCharacteristic(CustomCharacteristic.EveAirQuality);
+  airQualityService.addCharacteristic(CustomCharacteristic.EveAirQualityUnknown);
 
   // Make these services available to class
   this.informationService = informationService;
@@ -51,12 +93,6 @@ function SGP30Accessory(log, config) {
   if (this.enableFakeGato) {
     this.fakeGatoHistoryCarbonDioxideService = new FakeGatoHistoryService("room", this, {
       storage: 'fs',
-      filename: `SGP30-${os.hostname}-0-CarbonDioxide.json`,
-      folder: this.fakeGatoStoragePath
-    });
-    this.fakeGatoHistoryTVOCService = new FakeGatoHistoryService("room", this, {
-      storage: 'fs',
-      filename: `SGP30-${os.hostname}-0-TVOC.json`,
       folder: this.fakeGatoStoragePath
     });
   }
@@ -80,17 +116,52 @@ Object.defineProperty(SGP30Accessory.prototype, "eCO2", {
       return;
     }
 
-    this._currenteCO2 = eCO2Reading;  
-    this.airQualityService.getCharacteristic(Characteristic.CarbonDioxideLevel)
-      .updateValue(this._currenteCO2);
-    if (this.enableFakeGato) {
-      this.fakeGatoHistoryCarbonDioxideService.addEntry({
-        time: moment().unix(),
-        ppm: this._currenteCO2,
-      });
+    // Calculate running average of eCO2 over the last 30 samples
+    this._eCO2Counter++;
+    if (this._eCO2Samples.length == 30) {
+      let firstSample = this._eCO2Samples.shift();
+      this._eCO2CumSum -= firstSample;
     }
-    if (this.enableMQTT) {
-      this.publishToMQTT(this.eCO2Topic, this._currenteCO2);
+    this._eCO2Samples.push(eCO2Reading);
+    this._eCO2CumSum += eCO2Reading;
+
+    // Update current eCO2 value, and publish to MQTT/FakeGato once every 30 seconds
+    if (this._eCO2Counter == 30) {
+      this._eCO2Counter = 0;
+      this._currenteCO2 = this._eCO2CumSum / 30;
+      this.log(`eCO2: ${this._currenteCO2}`);
+
+      this.airQualityService.getCharacteristic(Characteristic.CarbonDioxideLevel)
+        .updateValue(this._currenteCO2);
+      this.airQualityService.getCharacteristic(CustomCharacteristic.EveAirQuality)
+        .updateValue(this._currenteCO2);
+      if (this._currenteCO2 <= 600) {
+        this.airQualityService.getCharacteristic(Characteristic.AirQuality)
+          .updateValue(1);
+      } else if (this._currenteCO2 > 600 && this._currenteCO2 <= 800) {
+        this.airQualityService.getCharacteristic(Characteristic.AirQuality)
+          .updateValue(2);
+      } else if (this._currenteCO2 > 800 && this._currenteCO2 <= 1000) {
+        this.airQualityService.getCharacteristic(Characteristic.AirQuality)
+          .updateValue(3);
+      } else if (this._currenteCO2 > 1000 && this._currenteCO2 <= 1500) {
+        this.airQualityService.getCharacteristic(Characteristic.AirQuality)
+          .updateValue(4);
+      } else {
+        this.airQualityService.getCharacteristic(Characteristic.AirQuality)
+          .updateValue(5);
+      }
+ 
+      if (this.enableFakeGato) {
+        this.fakeGatoHistoryCarbonDioxideService.addEntry({
+          time: moment().unix(),
+          ppm: this._currenteCO2 + 50, // Eve has a 450ppm floor for graphing, but SGP30's is 400ppm; add 50ppm to compensate 
+        });
+      }
+ 
+      if (this.enableMQTT) {
+        this.publishToMQTT(this.eCO2Topic, this._currenteCO2);
+      }
     }
   },
 
@@ -107,17 +178,26 @@ Object.defineProperty(SGP30Accessory.prototype, "TVOC", {
       return;
     }
 
-    this._currentTVOC = TVOCReading;  
-    this.airQualityService.getCharacteristic(Characteristic.VOCDensity)
-      .updateValue(this._currentTVOC);
-    if (this.enableFakeGato) {
-      this.fakeGatoHistoryTVOCService.addEntry({
-        time: moment().unix(),
-        ppm: this._currentTVOC,
-      });
+    // Calculate running average of TVOC over the last 30 samples
+    this._TVOCCounter++;
+    if (this._TVOCSamples.length == 30) {
+      let firstSample = this._TVOCSamples.shift();
+      this._TVOCCumSum -= firstSample;
     }
-    if (this.enableMQTT) {
-      this.publishToMQTT(this.TVOCTopic, this._currentTVOC);
+    this._TVOCSamples.push(TVOCReading);
+    this._TVOCCumSum += TVOCReading;
+
+    if (this._TVOCCounter == 30) {
+      this._TVOCCounter = 0;
+      this._currentTVOC = this._TVOCCumSum / 30;
+      this.log(`TVOC: ${this._currentTVOC}`);
+
+      this.airQualityService.getCharacteristic(Characteristic.VOCDensity)
+       .updateValue(this._currentTVOC);
+ 
+      if (this.enableMQTT) {
+        this.publishToMQTT(this.TVOCTopic, this._currentTVOC);
+      }
     }
   },
 
@@ -154,7 +234,7 @@ SGP30Accessory.prototype.setUpMQTT = function() {
 
 // Sends data to MQTT broker
 SGP30Accessory.prototype.publishToMQTT = function(topic, value) {
-  if (!this.mqttClient.connected || !topic || !value) {
+  if (!this.mqttClient.connected || !topic) {
     this.log.error("MQTT client not connected, or no topic or value for MQTT");
     return;
   }
@@ -162,7 +242,7 @@ SGP30Accessory.prototype.publishToMQTT = function(topic, value) {
 }
 
 // Set up sensor
-SGP30Accessory.prototype.setupSGP30() {
+SGP30Accessory.prototype.setupSGP30 = function() {
   data = SGP30.init();
   if (data.hasOwnProperty('errcode')) {
     this.log(`Error: ${data.errmsg}`);
@@ -174,7 +254,6 @@ SGP30Accessory.prototype.refreshData = function() {
   let data;
   data = SGP30.measureAirQuality();
 
-  // If error, set to error state
   if (data.hasOwnProperty('errcode')) {
     this.log(`Error: ${data.errmsg}`);
     // Updating a value with Error class sets status in HomeKit to 'Not responding'
@@ -185,15 +264,14 @@ SGP30Accessory.prototype.refreshData = function() {
     return;
   }
   
-  // Set temperature and humidity from what we polled
-  this.log(`eCO2: ${data.eCO2}, TVOC: ${data.TVOC}`);
+  // Set eCO2 and TVOC from what we polled
+  this.log.debug(`Read: eCO2: ${data.eCO2}ppm, TVOC: ${data.TVOC}ppb`); 
   this.eCO2 = data.eCO2;
   this.TVOC = data.TVOC;
 }
 
 SGP30Accessory.prototype.getServices = function() {
   return [this.informationService,
-          this.temperatureService,
-          this.humidityService,
-          this.fakeGatoHistoryService];
+          this.airQualityService,
+          this.fakeGatoHistoryCarbonDioxideService];
 }
