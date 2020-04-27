@@ -4,6 +4,8 @@ This is a Homebridge plugin for SGP30 eCO2 and TVOC sensor, working on the Raspb
 
 It uses read() and write() syscalls on the I2C devices exposed by Linux's filesystem.
 
+<img src="/docs/eve.png?raw=true" style="margin: 5px"> <img src="/docs/home.png?raw=true" style="margin: 5px">
+
 ## Configuration
 
 | Field name           | Description                                                   | Type / Unit    | Default value       | Required? |
