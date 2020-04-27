@@ -6,45 +6,14 @@ const mqtt = require('mqtt'); // MQTT client
 const os = require('os'); // Hostname
 
 var Service, Characteristic;
-var CustomCharacteristic = {};
+var CustomCharacteristic;
 var FakeGatoHistoryService;
 
 module.exports = homebridge => {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   FakeGatoHistoryService = require('fakegato-history')(homebridge);
-
-  // Need to add two custom characteristic for CO2 PPM to show historical graphs in Eve app
-  // See https://github.com/skrollme/homebridge-eveatmo/issues/1
-  // and https://github.com/simont77/fakegato-history/issues/65
-  CustomCharacteristic.EveAirQuality = function() {
-    Characteristic.call(this, 'Eve Air Quality', 'E863F10B-079E-48FF-8F27-9C2605A29F52');
-    this.setProps({
-      format: Characteristic.Formats.UINT16,
-      unit: "ppm",
-      maxValue: 5000,
-      minValue: 0,
-      minStep: 1,
-      perms: [ Characteristic.Perms.READ, Characteristic.Perms.NOTIFY ],
-    });
-    this.value = this.getDefaultValue();
-  }
-  CustomCharacteristic.EveAirQuality.UUID = 'E863F10B-079E-48FF-8F27-9C2605A29F52';
-  inherits(CustomCharacteristic.EveAirQuality, Characteristic);
-
-  CustomCharacteristic.EveAirQualityUnknown = function() {
-    Characteristic.call(this, 'Unknown Eve Characteristic', 'E863F132-079E-48FF-8F27-9C2605A29F52');
-    this.setProps({
-      format: Characteristic.Formats.FLOAT,
-      maxValue: 5000,
-      minValue: 0,
-      minStep: 1,
-      perms: [ Characteristic.Perms.READ, Characteristic.Perms.NOTIFY ],
-    });
-    this.value = this.getDefaultValue();
-  }
-  CustomCharacteristic.EveAirQualityUnknown.UUID = 'E863F132-079E-48FF-8F27-9C2605A29F52';
-  inherits(CustomCharacteristic.EveAirQualityUnknown, Characteristic);
+  CustomCharacteristic = require('./src/js/customcharacteristic.js')(homebridge);
 
   homebridge.registerAccessory("homebridge-sgp30", "SGP30", SGP30Accessory);
 }
@@ -53,6 +22,7 @@ function SGP30Accessory(log, config) {
   // Load configuration from files
   this.log = log;
   this.displayName = config['name'];
+  this.showTemperatureTile = typeof config['showTemperatureTile'] === 'undefined' ? true : config['showTemperatureTile'];
   this.baseline_values = config['baseline'];
   this.enableFakeGato = config['enableFakeGato'] || false;
   this.fakeGatoStoragePath = config['fakeGatoStoragePath'];
@@ -83,8 +53,11 @@ function SGP30Accessory(log, config) {
   airQualityService.addCharacteristic(CustomCharacteristic.EveAirQuality);
   airQualityService.addCharacteristic(CustomCharacteristic.EveAirQualityUnknown);
 
+  let temperatureService = new Service.TemperatureSensor("TVOC", "tvoc");
+
   this.informationService = informationService;
   this.airQualityService = airQualityService;
+  this.temperatureService = temperatureService;
 
   // Start FakeGato for logging historical data
   if (this.enableFakeGato) {
@@ -194,6 +167,16 @@ Object.defineProperty(SGP30Accessory.prototype, "TVOC", {
       this.airQualityService.getCharacteristic(Characteristic.VOCDensity)
        .updateValue(this._currentTVOC);
  
+      this.temperatureService.getCharacteristic(Characteristic.CurrentTemperature)
+        .updateValue(this._currentTVOC / 1000 * 100);
+
+      if (this.enableFakeGato) {
+        this.fakeGatoHistoryCarbonDioxideService.addEntry({
+          time: moment().unix(),
+          temp: this._currentTVOC / 1000 * 100, // Eve's maximum temperature is 100, and a maximum scale of 1000ppb allows for a conversion by multiplying the value by 10. 
+        });
+      }
+      
       if (this.enableMQTT) {
         this.publishToMQTT(this.TVOCTopic, this._currentTVOC);
       }
@@ -269,8 +252,15 @@ SGP30Accessory.prototype.refreshData = function() {
 }
 
 SGP30Accessory.prototype.getServices = function() {
-  return [this.informationService,
-          this.airQualityService,
-          this.fakeGatoHistoryCarbonDioxideService];
+  if (this.showTemperatureTile) {
+    return [this.informationService,
+            this.airQualityService,
+            this.temperatureService,
+            this.fakeGatoHistoryCarbonDioxideService];
+  } else {
+    return [this.informationService,
+            this.airQualityService,
+            this.fakeGatoHistoryCarbonDioxideService];
+  }
 }
 
