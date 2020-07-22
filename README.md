@@ -7,6 +7,7 @@ It uses read() and write() syscalls on the I2C devices exposed by Linux's filesy
 <img src="/docs/eve.png?raw=true" style="margin: 5px"> <img src="/docs/home.png?raw=true" style="margin: 5px">
 
 ## Configuration
+**Before running this plugin, you must add the `homebridge` user to the `i2c` group so Homebridge can access the I2C dev interface. `sudo adduser homebridge i2c`**
 
 | Field name           | Description                                                   | Type / Unit    | Default value       | Required? |
 | -------------------- |:--------------------------------------------------------------|:--------------:|:-------------------:|:---------:|
