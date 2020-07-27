@@ -172,8 +172,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, measure_air_quality));
   exports.Set(Napi::String::New(env, "measureRawSignals"),
               Napi::Function::New(env, measure_raw_signals));
-  exports.Set(Napi::String::New(env, "setBaseline"),
+  exports.Set(Napi::String::New(env, "getBaseline"),
               Napi::Function::New(env, get_baseline));
+  exports.Set(Napi::String::New(env, "setBaseline"),
+              Napi::Function::New(env, set_baseline));
   exports.Set(Napi::String::New(env, "setHumidity"),
               Napi::Function::New(env, set_humidity));
   exports.Set(Napi::String::New(env, "measureTest"),

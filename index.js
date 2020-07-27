@@ -4,10 +4,14 @@ const inherits = require('util').inherits;
 const moment = require('moment'); // Time formatting
 const mqtt = require('mqtt'); // MQTT client
 const os = require('os'); // Hostname
+const fs = require('fs'); // For writing files
+const path = require('path');
 
 var Service, Characteristic;
 var CustomCharacteristic;
 var FakeGatoHistoryService;
+
+var baselineFilepath = '';
 
 module.exports = homebridge => {
   Service = homebridge.hap.Service;
@@ -16,6 +20,8 @@ module.exports = homebridge => {
   CustomCharacteristic = require('./src/js/customcharacteristic.js')(homebridge);
 
   homebridge.registerAccessory("homebridge-sgp30", "SGP30", SGP30Accessory);
+
+  baselineFilepath = `${homebridge.user.storagePath()}/${os.hostname}_sgp30_baseline.json`;
 }
 
 function SGP30Accessory(log, config) {
@@ -31,13 +37,16 @@ function SGP30Accessory(log, config) {
 
   // Internal variables to keep track of current eCO2 and TVOC
   this._currenteCO2 = null;
-  this._currentTVOC = null;
   this._eCO2Samples = [];
-  this._TVOCSamples = [];
   this._eCO2CumSum = 0;
-  this._TVOCCumSum = 0;
   this._eCO2Counter = 0;
+ 
+  this._currentTVOC = null;
+  this._TVOCSamples = [];
+  this._TVOCCumSum = 0;
   this._TVOCCounter = 0;
+
+  this._readingCounter = 0;
 
   // Services
   let informationService = new Service.AccessoryInformation();
@@ -72,8 +81,10 @@ function SGP30Accessory(log, config) {
     this.setUpMQTT();
   }
 
-  // Periodically update the values
+  // Set up SGP30
   this.setupSGP30();
+
+  // Periodically update the values
   this.refreshData();
   setInterval(() => this.refreshData(), 1000);
 }
@@ -229,6 +240,15 @@ SGP30Accessory.prototype.setupSGP30 = function() {
   if (data.hasOwnProperty('errcode')) {
     this.log(`Error: ${data.errmsg}`);
   }
+
+  // Check for baseline and restore if available
+  try {
+    let baseline = JSON.parse(fs.readFileSync(baselineFilepath));
+    SGP30.setBaseline(baseline.TVOC_baseline, baseline.eCO2_baseline);
+    this.log(`Restored baseline ${JSON.stringify(baseline)}`);
+  } catch (err) {
+    this.log(`No baseline found, using defaults`);
+  }
 }
 
 // Read eCO2 and TVOC from sensor
@@ -249,6 +269,27 @@ SGP30Accessory.prototype.refreshData = function() {
   this.log.debug(`Read: eCO2: ${data.eCO2}ppm, TVOC: ${data.TVOC}ppb`); 
   this.eCO2 = data.eCO2;
   this.TVOC = data.TVOC;
+
+  // Update the baseline values every thirty seconds
+  this._readingCounter++;
+  if (this._readingCounter == 30) {
+    this._readingCounter = 0;
+    let baseline = SGP30.getBaseline();
+
+    // Not fatal if cannot get baseline values
+    if (baseline.hasOwnProperty('errcode')) {
+      this.log.debug(`${baseline}`);
+      return;
+    }
+
+    fs.writeFile(baselineFilepath, JSON.stringify(baseline), err => {
+      if (err) {
+        this.log(`${err}`);
+        return;
+      }
+      this.log(`Saved baseline: ${JSON.stringify(baseline)} to ${path.normalize(baselineFilepath)}`);
+    })
+  }
 }
 
 SGP30Accessory.prototype.getServices = function() {
