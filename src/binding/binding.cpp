@@ -90,11 +90,11 @@ Napi::Object get_baseline(const Napi::CallbackInfo &info) {
 }
 
 Napi::Object set_baseline(const Napi::CallbackInfo &info) {
-  uint16_t TVOC_baseline = static_cast<uint32_t>(info[0].As<Napi::Number>()) & 0xFFFF;
-  uint16_t eCO2_baseline = static_cast<uint32_t>(info[1].As<Napi::Number>()) & 0xFFFF;
+  uint16_t eCO2_baseline = static_cast<uint32_t>(info[0].As<Napi::Number>()) & 0xFFFF;
+  uint16_t TVOC_baseline = static_cast<uint32_t>(info[1].As<Napi::Number>()) & 0xFFFF;
   Napi::Env env = info.Env();
 
-  int err = SGP30_set_baseline(TVOC_baseline, eCO2_baseline);
+  int err = SGP30_set_baseline(eCO2_baseline, TVOC_baseline);
   if (err) {
     return BindingUtils::errFactory(env, err,
       "Could not measure raw signals from SGP30 module; did you run init() first?");

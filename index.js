@@ -244,7 +244,7 @@ SGP30Accessory.prototype.setupSGP30 = function() {
   // Check for baseline and restore if available
   try {
     let baseline = JSON.parse(fs.readFileSync(baselineFilepath));
-    SGP30.setBaseline(baseline.TVOC_baseline, baseline.eCO2_baseline);
+    SGP30.setBaseline(baseline.eCO2_baseline, baseline.TVOC_baseline);
     this.log(`Restored baseline ${JSON.stringify(baseline)}`);
   } catch (err) {
     this.log(`No baseline found, using defaults`);
