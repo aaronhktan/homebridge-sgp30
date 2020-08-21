@@ -6,5 +6,8 @@ node_modules/
 src/c/*.o
 src/c/*.d
 src/c/debug
-src/c/sgp30
+src/c/sgp30-cli
+
+# macOS stuff
+*.DS_Store
 

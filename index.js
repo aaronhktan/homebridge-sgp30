@@ -19,7 +19,7 @@ module.exports = homebridge => {
   FakeGatoHistoryService = require('fakegato-history')(homebridge);
   CustomCharacteristic = require('./src/js/customcharacteristic.js')(homebridge);
 
-  homebridge.registerAccessory("homebridge-sgp30", "SGP30", SGP30Accessory);
+  homebridge.registerAccessory('homebridge-sgp30', 'SGP30', SGP30Accessory);
 
   baselineFilepath = `${homebridge.user.storagePath()}/${os.hostname}_sgp30_baseline.json`;
 }
@@ -51,8 +51,8 @@ function SGP30Accessory(log, config) {
   // Services
   let informationService = new Service.AccessoryInformation();
   informationService
-    .setCharacteristic(Characteristic.Manufacturer, "Sensirion")
-    .setCharacteristic(Characteristic.Model, "SGP30")
+    .setCharacteristic(Characteristic.Manufacturer, 'Sensirion')
+    .setCharacteristic(Characteristic.Model, 'SGP30')
     .setCharacteristic(Characteristic.SerialNumber, `${os.hostname}-0`)
     .setCharacteristic(Characteristic.FirmwareRevision, require('./package.json').version);
 
@@ -62,7 +62,7 @@ function SGP30Accessory(log, config) {
   airQualityService.addCharacteristic(CustomCharacteristic.EveAirQuality);
   airQualityService.addCharacteristic(CustomCharacteristic.EveAirQualityUnknown);
 
-  let temperatureService = new Service.TemperatureSensor("TVOC", "tvoc");
+  let temperatureService = new Service.TemperatureSensor('TVOC', 'tvoc');
 
   this.informationService = informationService;
   this.airQualityService = airQualityService;
@@ -70,7 +70,7 @@ function SGP30Accessory(log, config) {
 
   // Start FakeGato for logging historical data
   if (this.enableFakeGato) {
-    this.fakeGatoHistoryCarbonDioxideService = new FakeGatoHistoryService("room", this, {
+    this.fakeGatoHistoryCarbonDioxideService = new FakeGatoHistoryService('room', this, {
       storage: 'fs',
       folder: this.fakeGatoStoragePath
     });
@@ -90,7 +90,7 @@ function SGP30Accessory(log, config) {
 }
 
 // Error checking and averaging when saving eCO2 and TVOC
-Object.defineProperty(SGP30Accessory.prototype, "eCO2", {
+Object.defineProperty(SGP30Accessory.prototype, 'eCO2', {
   set: function(eCO2Reading) {
     if (eCO2Reading > 60000 || eCO2Reading < 0) {
       this.log(`Error: eCO2 reading out of range: ` +
@@ -152,7 +152,7 @@ Object.defineProperty(SGP30Accessory.prototype, "eCO2", {
   }
 });
 
-Object.defineProperty(SGP30Accessory.prototype, "TVOC", {
+Object.defineProperty(SGP30Accessory.prototype, 'TVOC', {
   set: function(TVOCReading) {
     if (TVOCReading > 60000 || TVOCReading < 0) {
       this.log(`Error: TVOC reading out of range: ` +
@@ -202,12 +202,12 @@ Object.defineProperty(SGP30Accessory.prototype, "TVOC", {
 // Sets up MQTT client based on config loaded in constructor
 SGP30Accessory.prototype.setUpMQTT = function() {
   if (!this.enableMQTT) {
-    this.log.info("MQTT not enabled");
+    this.log.info('MQTT not enabled');
     return;
   }
 
   if (!this.mqttConfig) {
-    this.log.error("No MQTT config found");
+    this.log.error('No MQTT config found');
     return;
   }
 
@@ -216,10 +216,10 @@ SGP30Accessory.prototype.setUpMQTT = function() {
   this.TVOCTopic = this.mqttConfig.TVOCTopic || 'SGP30/TVOC';
 
   this.mqttClient = mqtt.connect(this.mqttUrl);
-  this.mqttClient.on("connect", () => {
+  this.mqttClient.on('connect', () => {
     this.log(`MQTT client connected to ${this.mqttUrl}`);
   });
-  this.mqttClient.on("error", (err) => {
+  this.mqttClient.on('error', (err) => {
     this.log(`MQTT client error: ${err}`);
     client.end();
   });
@@ -228,7 +228,7 @@ SGP30Accessory.prototype.setUpMQTT = function() {
 // Sends data to MQTT broker; must have called setupMQTT() previously
 SGP30Accessory.prototype.publishToMQTT = function(topic, value) {
   if (!this.mqttClient.connected || !topic) {
-    this.log.error("MQTT client not connected, or no topic or value for MQTT");
+    this.log.error('MQTT client not connected, or no topic or value for MQTT');
     return;
   }
   this.mqttClient.publish(topic, String(value));
